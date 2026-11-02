@@ -1,32 +1,26 @@
-from datetime import UTC, datetime
-from itertools import count
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import Session, select
 
+from app.database import get_session
+from app.models import TaskRecord
 from app.schemas import Task, TaskCreate, TaskUpdate
 
 # Un APIRouter es un "mini app": agrupa endpoints con un prefijo común.
 # Todas las rutas de este archivo empiezan con /tasks.
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
-
-# "Base de datos" en memoria: un dict de id -> Task.
-# Se borra al reiniciar el servidor. En el paso 4 la cambiamos por SQLite.
-# El guion bajo inicial indica que es privado de este módulo.
-
-_tasks: dict[int, Task] = {}
-
-# count(1) entrega 1, 2, 3... cada vez que llamas next(). Es un autoincremento.
-
-_ids = count(start=1)
+# Inyección de dependencias: cada endpoint que declare "session: SessionDep"
+# recibe una sesión abierta por get_session, sin crearla él mismo.
+# Así los tests pueden reemplazar get_session por una base de datos de prueba.
+SessionDep = Annotated[Session, Depends(get_session)]
 
 
-def _get_or_404(task_id: int) -> Task:
+def _get_or_404(session: Session, task_id: int) -> TaskRecord:
     """Busca una tarea; si no existe, corta la petición con un 404."""
-    task = _tasks.get(task_id)  # .get() devuelve None si no existe, sin error
+    task = session.get(TaskRecord, task_id)  # busca por clave primaria
     if task is None:
-        # raise HTTPException detiene el endpoint y FastAPI responde
-        # {"detail": "Tarea no encontrada"} con código 404.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada"
         )
@@ -34,46 +28,38 @@ def _get_or_404(task_id: int) -> Task:
 
 
 @router.get("")
-def list_tasks() -> list[Task]:
-    return list(_tasks.values())
+def list_tasks(session: SessionDep) -> list[Task]:
+    # select() arma la consulta SQL: SELECT * FROM tasks ORDER BY id
+    return session.exec(select(TaskRecord).order_by(TaskRecord.id)).all()
 
 
-# status_code=201 Created es el código correcto al crear un recurso (no 200).
 @router.post("", status_code=status.HTTP_201_CREATED)
-def create_task(data: TaskCreate) -> Task:
-    # FastAPI ve que "data" es un modelo Pydantic: lee el JSON del body,
-    # lo valida y te entrega un objeto TaskCreate ya revisado.
-    task = Task(
-        id=next(_ids),
-        created_at=datetime.now(UTC),  # guarda siempre la hora en UTC
-        **data.model_dump(),  # model_dump() -> dict; ** lo expande como argumentos
-    )
-    _tasks[task.id] = task
+def create_task(data: TaskCreate, session: SessionDep) -> Task:
+    task = TaskRecord(**data.model_dump())
+    session.add(task)  # la marca para insertar
+    session.commit()  # ejecuta el INSERT y guarda en disco
+    session.refresh(task)  # recarga la fila para obtener el id asignado
     return task
 
 
-# {task_id} es un parámetro de ruta. Por el type hint int, FastAPI convierte
-# "/tasks/3" en task_id=3, y "/tasks/abc" responde 422 solo.
-
-
 @router.get("/{task_id}")
-def read_task(task_id: int) -> Task:
-    return _get_or_404(task_id)
+def read_task(task_id: int, session: SessionDep) -> Task:
+    return _get_or_404(session, task_id)
 
 
 @router.patch("/{task_id}")
-# exclude_unset=True: solo los campos que el cliente ENVIÓ.
-# Sin esto, los que no mandó llegarían como None y borrarían datos
-def update_task(task_id: int, data: TaskUpdate) -> Task:
-    task = _get_or_404(task_id)
-    changes = data.model_dump(exclude_unset=True)
-    updated = task.model_copy(update=changes)  # copia de la tarea con los cambios
-    _tasks[task_id] = updated
-    return updated
+def update_task(task_id: int, data: TaskUpdate, session: SessionDep) -> Task:
+    task = _get_or_404(session, task_id)
+    # exclude_unset=True: solo los campos que el cliente ENVIÓ.
+    task.sqlmodel_update(data.model_dump(exclude_unset=True))
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
 
 
-# 204 No Content: se borró bien y no hay nada que devolver.
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int) -> None:
-    _get_or_404(task_id)
-    del _tasks[task_id]
+def delete_task(task_id: int, session: SessionDep) -> None:
+    task = _get_or_404(session, task_id)
+    session.delete(task)
+    session.commit()
