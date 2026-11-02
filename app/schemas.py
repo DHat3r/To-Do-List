@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -10,10 +11,12 @@ class TaskBase(BaseModel):
     # "str | None" significa opcional: puede venir un texto o nada.
     description: str | None = Field(default=None, max_length=500)
 
+
 # Lo que el cliente ENVÍA para crear una tarea. No trae id ni fecha:
 # esos los decide el servidor, nunca el cliente.
 class TaskCreate(TaskBase):
     pass
+
 
 # Lo que el cliente envía para EDITAR. Todo es opcional, porque con PATCH
 # solo mandas lo que quieres cambiar, por ejemplo {"completed": true}
@@ -33,10 +36,11 @@ class TaskUpdate(BaseModel):
             raise ValueError("no puede ser null")
         return value
 
+
 # Lo que la API DEVUELVE: los campos base más los que pone el servidor.
+
 
 class Task(TaskBase):
     id: int
-    completed: bool = False   # una tarea nueva empieza sin completar
+    completed: bool = False  # una tarea nueva empieza sin completar
     created_at: datetime
-
