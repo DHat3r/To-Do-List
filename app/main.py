@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.database import create_db_and_tables
-from app.routers import tasks
+from app.routers import auth, tasks
 
 
 # lifespan: código que corre al arrancar (antes del yield) y al apagar (después).
@@ -22,6 +22,7 @@ app = FastAPI(
 )
 
 # Registra en la app todas las rutas del router (/tasks, /tasks/{id}...)
+app.include_router(auth.router)
 app.include_router(tasks.router)
 
 

@@ -1,4 +1,9 @@
-from collections.abc import Iterator
+import os
+from collections.abc import Callable, Iterator
+
+# app.security exige SECRET_KEY al importarse, así que hay que definirla
+# ANTES de importar la app. Es una clave falsa, solo para los tests.
+os.environ.setdefault("SECRET_KEY", "clave-solo-para-tests")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,13 +14,11 @@ from app.database import get_session
 from app.main import app
 
 
-# Un fixture es "preparación reutilizable": cualquier test que pida un
-# parámetro llamado "client" recibe lo que devuelve esta función.
 @pytest.fixture
-def client() -> Iterator[TestClient]:
-    # Base de datos SQLite en memoria, nueva para cada test: rápida y sin
-    # tocar tasks.db. StaticPool reutiliza una sola conexión; sin eso, cada
-    # conexión nueva vería una base en memoria distinta (y vacía).
+def anon_client() -> Iterator[TestClient]:
+    """Cliente SIN token, con una base de datos en memoria nueva para cada test."""
+    # StaticPool reutiliza una sola conexión; sin eso, cada conexión nueva
+    # vería una base en memoria distinta (y vacía).
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -31,3 +34,27 @@ def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_session] = get_test_session
     yield TestClient(app)  # TestClient llama a la app directamente, sin red
     app.dependency_overrides.clear()  # deja la app como estaba
+
+
+@pytest.fixture
+def auth_headers(anon_client: TestClient) -> Callable[..., dict[str, str]]:
+    """Fábrica: registra un usuario, hace login y devuelve el header con su token."""
+
+    def _auth_headers(username: str = "leandro", password: str = "clave-segura-123"):
+        anon_client.post(
+            "/auth/register", json={"username": username, "password": password}
+        )
+        # El login es un formulario (data=), no JSON (json=), como pide OAuth2.
+        response = anon_client.post(
+            "/auth/token", data={"username": username, "password": password}
+        )
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    return _auth_headers
+
+
+@pytest.fixture
+def client(anon_client: TestClient, auth_headers) -> TestClient:
+    """Cliente con un usuario logueado: todas sus peticiones llevan el token."""
+    anon_client.headers.update(auth_headers())
+    return anon_client

@@ -44,3 +44,22 @@ class Task(TaskBase):
     id: int
     completed: bool = False  # una tarea nueva empieza sin completar
     created_at: datetime
+
+
+# Lo que el cliente envía para registrarse.
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=8, max_length=128)
+
+
+# Lo que la API devuelve de un usuario: NUNCA incluye la contraseña ni su hash.
+class User(BaseModel):
+    id: int
+    username: str
+
+
+# Respuesta del login. "bearer" es el tipo de token estándar de OAuth2:
+# el cliente lo envía en el header  Authorization: Bearer <token>
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
