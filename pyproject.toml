@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Agrega la raíz del proyecto al path de Python para que los tests puedan
+# hacer "from app... import ...", se corra con "pytest" o con "python -m pytest".
+pythonpath = ["."]
+testpaths = ["tests"]
