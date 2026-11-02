@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Campos que comparten "crear" y "leer". Evita repetirlos.
@@ -21,6 +21,17 @@ class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     completed: bool | None = Field(default=None)
+
+    # Opcionales (puedes no enviarlos), pero si los envías no pueden ser null.
+    # El validador solo corre para los campos que llegaron en el JSON.
+    # description sí admite null: es la forma de borrarla.
+    @field_validator("title", "completed")
+    @classmethod
+    def reject_null(cls, value: str | bool | None) -> str | bool | None:
+        if value is None:
+            # Un ValueError aquí se convierte en un 422 con este mensaje.
+            raise ValueError("no puede ser null")
+        return value
 
 # Lo que la API DEVUELVE: los campos base más los que pone el servidor.
 
