@@ -1,0 +1,16 @@
+services:
+  api:
+    build: .
+    ports:
+      # puerto_en_tu_PC:puerto_en_el_contenedor. API_PORT se lee del .env;
+      # si no está definido, usa 8000.
+      - "${API_PORT:-8000}:8000"
+    # Pasa las variables del .env (SECRET_KEY) al contenedor.
+    env_file: .env
+    volumes:
+      # Volumen con nombre: los datos persisten aunque borres el contenedor.
+      - tasks-data:/code/data
+    restart: unless-stopped
+
+volumes:
+  tasks-data:

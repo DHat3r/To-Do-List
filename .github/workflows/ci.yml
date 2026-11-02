@@ -1,0 +1,30 @@
+# CI: en cada push y pull request, GitHub levanta una máquina Linux limpia,
+# instala el proyecto y corre lint, tests y el build de Docker.
+# Si algo falla, el commit queda marcado en rojo y el badge del README también.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip # reutiliza los paquetes descargados entre ejecuciones
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # Solo comprueba que la imagen se construye; no la publica.
+      - run: docker build -t todo-api .
